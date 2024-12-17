@@ -10,6 +10,7 @@ import {
   Tag,
   Button,
   Modal,
+  Input,
 } from "antd";
 import { AptosClient } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
@@ -62,6 +63,10 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
   const [isBuyModalVisible, setIsBuyModalVisible] = useState(false);
   const [selectedNft, setSelectedNft] = useState<NFT | null>(null);
 
+  // Transfer Modal State
+  const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [recipientAddress, setRecipientAddress] = useState("");
+
   useEffect(() => {
     handleFetchNfts(undefined);
   }, []);
@@ -70,7 +75,7 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
     try {
       const response = await client.getAccountResource(
         marketplaceAddr,
-        "0x4a9a3916e1355af68ded51424a6938de5f6d67e360b36a956cecbf00c0ff4f60::NFTMarketplace::Marketplace"
+        "0xa35a69be77334d748585cfbebc7ca5dff7deab7821944c9bc4e46888537341da::NFTMarketplace::Marketplace"
       );
       const nftList = (response.data as { nfts: NFT[] }).nfts;
 
@@ -142,10 +147,51 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
       message.success("NFT purchased successfully!");
       setIsBuyModalVisible(false);
       handleFetchNfts(rarity === "all" ? undefined : rarity); // Refresh NFT list
-      console.log("signAndSubmitTransaction:", signAndSubmitTransaction);
     } catch (error) {
       console.error("Error purchasing NFT:", error);
       message.error("Failed to purchase NFT.");
+    }
+  };
+
+  // Transfer NFT Logic
+  const handleTransferClick = (nft: NFT) => {
+    setSelectedNft(nft);
+    setIsTransferModalVisible(true);
+  };
+
+  const handleCancelTransfer = () => {
+    setIsTransferModalVisible(false);
+    setSelectedNft(null);
+    setRecipientAddress(""); // Clear the recipient address
+  };
+
+  const handleConfirmTransfer = async () => {
+    if (!selectedNft || !recipientAddress) return;
+  
+    try {
+      const entryFunctionPayload = {
+        type: "entry_function_payload",
+        function: `${marketplaceAddr}::NFTMarketplace::transfer_nft`,
+        type_arguments: [],
+        arguments: [
+          marketplaceAddr, // Marketplace address
+          selectedNft.id.toString(), // NFT ID
+          recipientAddress, // New owner's address
+        ],
+        data: {} // Add this line to include the data property
+      };
+  
+      const response = await (window as any).aptos.signAndSubmitTransaction(
+        entryFunctionPayload
+      );
+      await client.waitForTransaction(response.hash);
+  
+      message.success("NFT transferred successfully!");
+      setIsTransferModalVisible(false);
+      handleFetchNfts(rarity === "all" ? undefined : rarity); // Refresh NFT list
+    } catch (error) {
+      console.error("Error transferring NFT:", error);
+      message.error("Failed to transfer NFT.");
     }
   };
 
@@ -225,6 +271,9 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
                 <Button type="link" onClick={() => handleBuyClick(nft)}>
                   Buy
                 </Button>,
+                <Button type="link" onClick={() => handleTransferClick(nft)}>
+                  Transfer
+                </Button>,
               ]}
             >
               {/* Rarity Tag */}
@@ -293,6 +342,41 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
             <p>
               <strong>Owner:</strong> {truncateAddress(selectedNft.owner)}
             </p>
+          </>
+        )}
+      </Modal>
+
+      {/* Transfer Modal */}
+      <Modal
+        title="Transfer NFT"
+        visible={isTransferModalVisible}
+        onCancel={handleCancelTransfer}
+        footer={[
+          <Button key="cancel" onClick={handleCancelTransfer}>
+            Cancel
+          </Button>,
+          <Button key="confirm" type="primary" onClick={handleConfirmTransfer}>
+            Confirm Transfer
+          </Button>,
+        ]}
+      >
+        {selectedNft && (
+          <>
+            <p>
+              <strong>NFT ID:</strong> {selectedNft.id}
+            </p>
+            <p>
+              <strong>Name:</strong> {selectedNft.name}
+            </p>
+            <p>
+              <strong>Current Owner:</strong> {truncateAddress(selectedNft.owner)}
+            </p>
+            <Input
+              placeholder="Recipient Address"
+              value={recipientAddress}
+              onChange={(e) => setRecipientAddress(e.target.value)}
+              style={{ marginBottom: "10px" }}
+            />
           </>
         )}
       </Modal>
